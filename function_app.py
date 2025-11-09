@@ -9,7 +9,7 @@ from datetime import datetime
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 """
-COMP3211 Coursework 2 - Task 1
+COMP3211 Coursework 2
 Name: Sinjini Sarkar (sc23ss2)
 Student ID: 201695493
 Function: LeedsWeatherSimulator
@@ -55,33 +55,48 @@ def leeds_weather_simulator(req: func.HttpRequest) -> func.HttpResponse:
 
     logging.info("LeedsWeatherSimulator triggered.")
 
-    # Default = 20 sensors but allow ?count= for scalability tests
-    count_param = req.params.get("count")
     try:
-        sensor_count = int(count_param) if count_param else 20
-    except ValueError:
-        sensor_count = 20
+        # Default = 20 sensors but allow ?count= for scalability tests
+        count_param = req.params.get("count")
 
-    # Measure time taken for the simulation
-    start = time.perf_counter()
-    readings = simulate_weather_sensors(sensor_count)
-    end = time.perf_counter()
-    duration_ms = (end - start) * 1000.0
+        # Validate that 'count' is a positive integer
+        if count_param:
+            if not count_param.isdigit() or int(count_param) <= 0:
+                return func.HttpResponse(
+                    "Invalid 'count' parameter. Please provide a positive integer.",
+                    status_code=400
+                )
+            sensor_count = int(count_param)
+        else:
+            sensor_count = 20
 
-    result = {
-        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
-        "city": "Leeds",
-        "sensor_count": sensor_count,
-        "time_ms": round(duration_ms, 3),
-        "readings": readings,
-    }
+        # Measure time taken for the simulation
+        start = time.perf_counter()
+        readings = simulate_weather_sensors(sensor_count)
+        end = time.perf_counter()
+        duration_ms = (end - start) * 1000.0
 
-    # Return result as JSON response
-    return func.HttpResponse(
-        json.dumps(result, indent=2),
-        mimetype="application/json",
-        status_code=200,
-    )
+        result = {
+            "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+            "city": "Leeds",
+            "sensor_count": sensor_count,
+            "time_ms": round(duration_ms, 3),
+            "readings": readings,
+        }
+
+        # Return result as JSON response
+        return func.HttpResponse(
+            json.dumps(result, indent=2),
+            mimetype="application/json",
+            status_code=200,
+        )
+
+    except Exception as e:
+        logging.error(f"Error in LeedsWeatherSimulator: {str(e)}")
+        return func.HttpResponse(
+            f"An internal error occurred while generating sensor data: {str(e)}",
+            status_code=500
+        )
 
 # --- Task 2: Statistics (per sensor) ---
 @app.function_name(name="LeedsWeatherStats")
