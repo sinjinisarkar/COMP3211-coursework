@@ -118,50 +118,80 @@ def leeds_weather_simulator(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 # --- Task 2: Statistics (per sensor) ---
+@app.generic_input_binding(
+    arg_name="sensor_rows",
+    type="sql",
+    CommandText="SELECT * FROM dbo.SensorData",
+    CommandType="Text",
+    ConnectionStringSetting="SqlConnectionString",
+    data_type=DataType.STRING
+)
 @app.function_name(name="LeedsWeatherStats")
-@app.route(route="LeedsWeatherStats")
-def leeds_weather_stats(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("LeedsWeatherStats function triggered.")
+@app.route(route="LeedsWeatherStats", methods=["GET"])
+def leeds_weather_stats(req: func.HttpRequest,
+                        sensor_rows: func.SqlRowList) -> func.HttpResponse:
+    """
+    Task 2 - Statistics Function (HTTP).
+    Reads ALL rows from dbo.SensorData via SQL input binding
+    and returns min / max / average per sensor as JSON.
+    """
 
-    try:
-        data = req.get_json()
-    except ValueError:
-        return func.HttpResponse("Invalid JSON.", status_code=400)
+    logging.info("LeedsWeatherStats (DB-based) function triggered.")
 
-    readings = data.get("readings", [])
-    if not readings:
-        return func.HttpResponse("No readings found.", status_code=400)
+    # Convert SqlRow objects to Python dicts
+    records = [json.loads(row.to_json()) for row in sensor_rows]
 
-    # Helper to compute avg
+    if not records:
+        return func.HttpResponse(
+            "No data found in SensorData table.",
+            status_code=200
+        )
+
+    # Helper to compute average
     def average(values):
         return sum(values) / len(values) if values else 0
 
-    # Group readings by sensor_id
+    # Group by SensorId
     grouped = {}
-    for r in readings:
-        sid = r["sensor_id"]
+    for r in records:
+        sid = r["SensorId"]
         grouped.setdefault(sid, []).append(r)
 
-    # Compute per sensor stats
+    # Compute stats per sensor
     stats_per_sensor = {}
     for sid, values in grouped.items():
-        temps = [v["temperature_c"] for v in values]
-        winds = [v["wind_mph"] for v in values]
-        hums  = [v["humidity_percent"] for v in values]
-        co2   = [v["co2_ppm"] for v in values]
+        temps = [v["Temperature"] for v in values]
+        winds = [v["WindSpeed"] for v in values]
+        hums  = [v["RelativeHumidity"] for v in values]
+        co2   = [v["CO2"] for v in values]
 
         stats_per_sensor[f"Sensor_{sid}"] = {
-            "temperature": {"min": min(temps), "max": max(temps), "average": round(average(temps), 2)},
-            "wind_speed": {"min": min(winds), "max": max(winds), "average": round(average(winds), 2)},
-            "humidity":   {"min": min(hums),  "max": max(hums),  "average": round(average(hums), 2)},
-            "co2":        {"min": min(co2),   "max": max(co2),   "average": round(average(co2), 2)}
+            "temperature": {
+                "min": min(temps),
+                "max": max(temps),
+                "average": round(average(temps), 2),
+            },
+            "wind_speed": {
+                "min": min(winds),
+                "max": max(winds),
+                "average": round(average(winds), 2),
+            },
+            "humidity": {
+                "min": min(hums),
+                "max": max(hums),
+                "average": round(average(hums), 2),
+            },
+            "co2": {
+                "min": min(co2),
+                "max": max(co2),
+                "average": round(average(co2), 2),
+            },
         }
 
-    # Return as JSON
     return func.HttpResponse(
         json.dumps(stats_per_sensor, indent=2),
         mimetype="application/json",
-        status_code=200
+        status_code=200,
     )
 
 # --- Task 3a: Timer-triggered data function (writes to SQL) ---
