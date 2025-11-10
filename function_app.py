@@ -4,6 +4,7 @@ import json
 import random
 import time
 from datetime import datetime
+from azure.functions.decorators.core import DataType
 
 # Create Function App instance
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -42,6 +43,24 @@ def simulate_weather_sensors(sensor_count: int) -> list[dict]:
     """Generate readings from all sensors."""
     sensors = [Sensor(i + 1) for i in range(sensor_count)]
     return [sensor.generate_reading() for sensor in sensors]
+
+def generate_sql_rows(sensor_count: int) -> func.SqlRowList:
+    """
+    Create a list of SqlRow objects ready to be written into dbo.SensorData.
+    Uses the existing Sensor class to generate readings that match the DB schema.
+    """
+    rows = []
+    for sensor_id in range(1, sensor_count + 1):
+        reading = Sensor(sensor_id).generate_reading()
+        row = func.SqlRow(
+            SensorId=reading["sensor_id"],
+            Temperature=reading["temperature_c"],
+            WindSpeed=reading["wind_mph"],
+            RelativeHumidity=reading["humidity_percent"],
+            CO2=reading["co2_ppm"]
+        )
+        rows.append(row)
+    return rows
 
 # --- Task 1: Simulated Data ---
 @app.function_name(name="LeedsWeatherSimulator")
@@ -144,3 +163,36 @@ def leeds_weather_stats(req: func.HttpRequest) -> func.HttpResponse:
         mimetype="application/json",
         status_code=200
     )
+
+# --- Task 3: Timer-triggered data function (writes to SQL) ---
+@app.generic_output_binding(
+    arg_name="rows",
+    type="sql",
+    CommandText="dbo.SensorData",              # matches your SQL table
+    ConnectionStringSetting="SqlConnectionString",
+    data_type=DataType.STRING
+)
+@app.function_name(name="Task3_DataTimer")
+@app.timer_trigger(
+    schedule="0 */5 * * * *",   # every 5 minutes
+    arg_name="myTimer",
+    run_on_startup=True,        # run once immediately on host start (useful for testing)
+    use_monitor=True
+)
+def task3_data_timer(myTimer: func.TimerRequest,
+                     rows: func.Out[func.SqlRowList]) -> None:
+    """
+    Task 3 - Data function.
+    Timer-triggered Azure Function that writes ONE reading per sensor
+    into the SensorData SQL table using an output binding.
+    """
+
+    logging.info("Task3_DataTimer triggered.")
+
+    sensor_count = 20  # 20 virtual sensors in Leeds
+    sql_rows = generate_sql_rows(sensor_count)
+
+    # Write all rows to SQL in one operation
+    rows.set(sql_rows)
+
+    logging.info("Task3_DataTimer inserted %d rows into SensorData.", len(sql_rows))
