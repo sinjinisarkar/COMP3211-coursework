@@ -164,7 +164,7 @@ def leeds_weather_stats(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200
     )
 
-# --- Task 3: Timer-triggered data function (writes to SQL) ---
+# --- Task 3a: Timer-triggered data function (writes to SQL) ---
 @app.generic_output_binding(
     arg_name="rows",
     type="sql",
@@ -182,7 +182,7 @@ def leeds_weather_stats(req: func.HttpRequest) -> func.HttpResponse:
 def task3_data_timer(myTimer: func.TimerRequest,
                      rows: func.Out[func.SqlRowList]) -> None:
     """
-    Task 3 - Data function.
+    Task 3a - Data function.
     Timer-triggered Azure Function that writes ONE reading per sensor
     into the SensorData SQL table using an output binding.
     """
@@ -196,3 +196,84 @@ def task3_data_timer(myTimer: func.TimerRequest,
     rows.set(sql_rows)
 
     logging.info("Task3_DataTimer inserted %d rows into SensorData.", len(sql_rows))
+
+# --- Task 3b: SQL-triggered statistics function ---
+# This trigger fires whenever SensorData changes
+@app.generic_trigger(
+    arg_name="changes",
+    type="sqlTrigger",
+    TableName="dbo.SensorData",
+    ConnectionStringSetting="SqlConnectionString",
+    data_type=DataType.STRING
+)
+# Input binding to read all rows from SensorData
+@app.generic_input_binding(
+    arg_name="all_rows",
+    type="sql",
+    CommandText="SELECT * FROM dbo.SensorData",
+    CommandType="Text",
+    ConnectionStringSetting="SqlConnectionString",
+    data_type=DataType.STRING
+)
+@app.function_name(name="Task3_StatsSqlTrigger")
+def task3_stats_sql_trigger(changes,
+                            all_rows: func.SqlRowList) -> None:
+    """
+    Task 3(b) - Statistics function triggered by SQL.
+    When SensorData changes, this reads ALL rows from the table
+    and logs min / max / average for each sensor, same as Task 2.
+    """
+
+    logging.info("Task3_StatsSqlTrigger fired due to change in SensorData.")
+
+    # Convert each SqlRow into a normal Python dict
+    records = [json.loads(row.to_json()) for row in all_rows]
+
+    if not records:
+        logging.info("No records found in SensorData table.")
+        return
+
+    # Helper to compute average
+    def average(values):
+        return sum(values) / len(values) if values else 0
+
+    # Group rows by SensorId
+    grouped = {}
+    for r in records:
+        sid = r["SensorId"]
+        grouped.setdefault(sid, []).append(r)
+
+    # Compute stats per sensor (same structure as Task 2)
+    stats_per_sensor = {}
+    for sid, values in grouped.items():
+        temps = [v["Temperature"] for v in values]
+        winds = [v["WindSpeed"] for v in values]
+        hums  = [v["RelativeHumidity"] for v in values]
+        co2   = [v["CO2"] for v in values]
+
+        stats_per_sensor[f"Sensor_{sid}"] = {
+            "temperature": {
+                "min": min(temps),
+                "max": max(temps),
+                "average": round(average(temps), 2),
+            },
+            "wind_speed": {
+                "min": min(winds),
+                "max": max(winds),
+                "average": round(average(winds), 2),
+            },
+            "humidity": {
+                "min": min(hums),
+                "max": max(hums),
+                "average": round(average(hums), 2),
+            },
+            "co2": {
+                "min": min(co2),
+                "max": max(co2),
+                "average": round(average(co2), 2),
+            },
+        }
+
+    # Because this is a SQL trigger (not HTTP), we log the JSON
+    logging.info("Task3_StatsSqlTrigger statistics:\n%s",
+                 json.dumps(stats_per_sensor, indent=2))
