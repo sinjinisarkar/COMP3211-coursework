@@ -245,9 +245,9 @@ def task3_data_timer(myTimer: func.TimerRequest,
     ConnectionStringSetting="SqlConnectionString",
     data_type=DataType.STRING
 )
-@app.function_name(name="Task3_StatsSqlTrigger")
-def task3_stats_sql_trigger(changes,
-                            all_rows: func.SqlRowList) -> None:
+@app.function_name(name="Task3_StatsSqlTriggerV2")   # NEW NAME
+def task3_stats_sql_trigger_v2(changes,              # NEW FUNCTION NAME
+                               all_rows: func.SqlRowList) -> None:
     """
     Task 3(b) - Statistics function triggered by SQL.
     When SensorData changes, this reads ALL rows from the table
@@ -305,5 +305,5 @@ def task3_stats_sql_trigger(changes,
         }
 
     # Because this is a SQL trigger (not HTTP), we log the JSON
-    logging.info("Task3_StatsSqlTrigger statistics:\n%s",
+    logging.info("Task3_StatsSqlTriggerV2 statistics:\n%s",
                  json.dumps(stats_per_sensor, indent=2))
