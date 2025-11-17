@@ -134,7 +134,7 @@ def leeds_weather_stats(req: func.HttpRequest,
     Task 2 - Statistics Function (HTTP).
     Reads ALL rows from dbo.SensorData via SQL input binding
     and returns min / max / average per sensor as JSON.
-    """
+    """alrig
 
     logging.info("LeedsWeatherStats (DB-based) function triggered.")
 
@@ -307,3 +307,7 @@ def task3_stats_sql_trigger_v2(changes,              # NEW FUNCTION NAME
     # Because this is a SQL trigger (not HTTP), we log the JSON
     logging.info("Task3_StatsSqlTriggerV2 statistics:\n%s",
                  json.dumps(stats_per_sensor, indent=2))
+
+
+
+
