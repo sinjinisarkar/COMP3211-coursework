@@ -44,10 +44,10 @@ def simulate_weather_sensors(sensor_count: int) -> list[dict]:
     sensors = [Sensor(i + 1) for i in range(sensor_count)]
     return [sensor.generate_reading() for sensor in sensors]
 
-def generate_sql_rows(sensor_count: int) -> func.SqlRowList:
+def generate_sql_rows_for_one_cycle(sensor_count: int) -> func.SqlRowList:
     """
-    Create a list of SqlRow objects ready to be written into dbo.SensorData.
-    Uses the existing Sensor class to generate readings that match the DB schema.
+    Generate exactly ONE reading per sensor, returned as SqlRowList.
+    Used by Task 3 (timer) to insert 1 row per sensor.
     """
     rows = []
     for sensor_id in range(1, sensor_count + 1):
@@ -62,48 +62,102 @@ def generate_sql_rows(sensor_count: int) -> func.SqlRowList:
         rows.append(row)
     return rows
 
+
+def generate_sql_rows_for_task1(number_of_records: int,
+                                sensor_count: int = 20) -> tuple[list[dict], func.SqlRowList]:
+    """
+    Generate 'number_of_records' readings per sensor (so sensor_count * number_of_records rows).
+    Returns BOTH:
+      - readings_json: list of dicts for the HTTP response
+      - rows_sql: SqlRowList for insertion into dbo.SensorData
+    """
+    readings_json: list[dict] = []
+    rows_sql: list[func.SqlRow] = []
+
+    for _ in range(number_of_records):
+        for sensor_id in range(1, sensor_count + 1):
+            reading = Sensor(sensor_id).generate_reading()
+            readings_json.append(reading)
+
+            row = func.SqlRow(
+                SensorId=reading["sensor_id"],
+                Temperature=reading["temperature_c"],
+                WindSpeed=reading["wind_mph"],
+                RelativeHumidity=reading["humidity_percent"],
+                CO2=reading["co2_ppm"]
+            )
+            rows_sql.append(row)
+
+    return readings_json, rows_sql
+
 # --- Task 1: Simulated Data ---
+@app.generic_output_binding(
+    arg_name="rows_out",
+    type="sql",
+    CommandText="dbo.SensorData",
+    ConnectionStringSetting="SqlConnectionString",
+    data_type=DataType.STRING
+)
 @app.function_name(name="LeedsWeatherSimulator")
 @app.route(route="LeedsWeatherSimulator")
-def leeds_weather_simulator(req: func.HttpRequest) -> func.HttpResponse:
+def leeds_weather_simulator(req: func.HttpRequest,
+                            rows_out: func.Out[func.SqlRowList]) -> func.HttpResponse:
     """
     Task 1 - Simulated Data Function.
-    Simulates data from N sensors in Leeds (default 20).
-    Also returns how long the simulation took in milliseconds.
+    Simulates data from 20 sensors in Leeds.
+    Uses ?number_of_records=<N> to control how many readings per sensor are generated.
+    Writes all generated records into dbo.SensorData and returns timing + readings as JSON.
     """
 
     logging.info("LeedsWeatherSimulator triggered.")
 
     try:
-        # Default = 20 sensors but allow ?count= for scalability tests
-        count_param = req.params.get("count")
+        # We always simulate 20 sensors (as per coursework brief)
+        sensor_count = 20
 
-        # Validate that 'count' is a positive integer
-        if count_param:
-            if not count_param.isdigit() or int(count_param) <= 0:
-                return func.HttpResponse(
-                    "Invalid 'count' parameter. Please provide a positive integer.",
-                    status_code=400
-                )
-            sensor_count = int(count_param)
-        else:
-            sensor_count = 20
+        # Read the 'number_of_records' query parameter
+        num_param = req.params.get("number_of_records")
 
-        # Measure time taken for the simulation
+        if not num_param:
+            return func.HttpResponse(
+                "Please provide 'number_of_records' in the query string, e.g. "
+                "/api/LeedsWeatherSimulator?number_of_records=10",
+                status_code=400
+            )
+
+        if (not num_param.isdigit()) or int(num_param) <= 0:
+            return func.HttpResponse(
+                "Invalid 'number_of_records' parameter. Please provide a positive integer.",
+                status_code=400
+            )
+
+        number_of_records = int(num_param)
+
+        # Measure time to generate and store the data
         start = time.perf_counter()
-        readings = simulate_weather_sensors(sensor_count)
+        readings_json, rows_sql = generate_sql_rows_for_task1(
+            number_of_records=number_of_records,
+            sensor_count=sensor_count
+        )
+
+        # Write all rows to SQL in one operation
+        rows_out.set(rows_sql)
+
         end = time.perf_counter()
         duration_ms = (end - start) * 1000.0
+
+        total_rows = len(rows_sql)  # should be sensor_count * number_of_records
 
         result = {
             "timestamp_utc": datetime.utcnow().isoformat() + "Z",
             "city": "Leeds",
             "sensor_count": sensor_count,
+            "number_of_records_per_sensor": number_of_records,
+            "total_rows_inserted": total_rows,
             "time_ms": round(duration_ms, 3),
-            "readings": readings,
+            "readings": readings_json,
         }
 
-        # Return result as JSON response
         return func.HttpResponse(
             json.dumps(result, indent=2),
             mimetype="application/json",
@@ -134,7 +188,7 @@ def leeds_weather_stats(req: func.HttpRequest,
     Task 2 - Statistics Function (HTTP).
     Reads ALL rows from dbo.SensorData via SQL input binding
     and returns min / max / average per sensor as JSON.
-    """alrig
+    """
 
     logging.info("LeedsWeatherStats (DB-based) function triggered.")
 
@@ -220,7 +274,7 @@ def task3_data_timer(myTimer: func.TimerRequest,
     logging.info("Task3_DataTimer triggered.")
 
     sensor_count = 20  # 20 virtual sensors in Leeds
-    sql_rows = generate_sql_rows(sensor_count)
+    sql_rows = generate_sql_rows_for_one_cycle(sensor_count)
 
     # Write all rows to SQL in one operation
     rows.set(sql_rows)
