@@ -1,3 +1,9 @@
+"""
+COMP3211 Coursework 2
+Name: Sinjini Sarkar (sc23ss2)
+Student ID: 201695493
+"""
+
 import azure.functions as func
 import logging
 import json
@@ -9,14 +15,7 @@ from azure.functions.decorators.core import DataType
 # Create Function App instance
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-"""
-COMP3211 Coursework 2
-Name: Sinjini Sarkar (sc23ss2)
-Student ID: 201695493
-Function: LeedsWeatherSimulator
-"""
-
-# Ranges (from coursework specification)
+# Ranges (from coursework spec)
 TEMP_RANGE = (5, 18) # °C
 WIND_RANGE = (12, 24) # mph
 HUMID_RANGE = (30, 60) # %
@@ -24,12 +23,12 @@ CO2_RANGE = (400, 1600) # ppm
 
 
 class Sensor:
-    """A simple model of a Leeds weather sensor."""
+    # A simple model of a Leeds weather sensor.
     def __init__(self, sensor_id: int):
         self.sensor_id = sensor_id
 
     def generate_reading(self) -> dict:
-        """Produce one simulated reading for this sensor."""
+        # Produce one simulated reading for this sensor.
         return {
             "sensor_id": self.sensor_id,
             "temperature_c": random.randint(*TEMP_RANGE),
@@ -38,17 +37,14 @@ class Sensor:
             "co2_ppm": random.randint(*CO2_RANGE),
         }
 
-
 def simulate_weather_sensors(sensor_count: int) -> list[dict]:
-    """Generate readings from all sensors."""
+    # Generate readings from all sensors.
     sensors = [Sensor(i + 1) for i in range(sensor_count)]
     return [sensor.generate_reading() for sensor in sensors]
 
 def generate_sql_rows_for_one_cycle(sensor_count: int) -> func.SqlRowList:
-    """
-    Generate exactly ONE reading per sensor, returned as SqlRowList.
-    Used by Task 3 (timer) to insert 1 row per sensor.
-    """
+    # Generate exactly ONE reading per sensor, returned as SqlRowList. 
+    # Used by Task 3 (timer) to insert 1 row per sensor.
     rows = []
     for sensor_id in range(1, sensor_count + 1):
         reading = Sensor(sensor_id).generate_reading()
@@ -62,15 +58,8 @@ def generate_sql_rows_for_one_cycle(sensor_count: int) -> func.SqlRowList:
         rows.append(row)
     return rows
 
-
-def generate_sql_rows_for_task1(number_of_records: int,
-                                sensor_count: int = 20) -> tuple[list[dict], func.SqlRowList]:
-    """
-    Generate 'number_of_records' readings per sensor (so sensor_count * number_of_records rows).
-    Returns BOTH:
-      - readings_json: list of dicts for the HTTP response
-      - rows_sql: SqlRowList for insertion into dbo.SensorData
-    """
+def generate_sql_rows_for_task1(number_of_records: int, sensor_count: int = 20) -> tuple[list[dict], func.SqlRowList]:
+    # Generate number_of_records readings per sensor (so sensor_count * number_of_records rows).
     readings_json: list[dict] = []
     rows_sql: list[func.SqlRow] = []
 
@@ -108,7 +97,6 @@ def leeds_weather_simulator(req: func.HttpRequest,
     Uses ?number_of_records=value(int) to control how many readings per sensor are generated.
     Writes all generated records into dbo.SensorData and returns timing + readings as JSON.
     """
-
     logging.info("LeedsWeatherSimulator triggered.")
 
     try:
@@ -118,6 +106,7 @@ def leeds_weather_simulator(req: func.HttpRequest,
         # Read the 'number_of_records' query parameter
         num_param = req.params.get("number_of_records")
 
+        # Error handling if number of records entered by user is invalid
         if not num_param:
             return func.HttpResponse(
                 "Please provide 'number_of_records' in the query string, e.g. "
@@ -146,7 +135,7 @@ def leeds_weather_simulator(req: func.HttpRequest,
         end = time.perf_counter()
         duration_ms = (end - start) * 1000.0
 
-        total_rows = len(rows_sql)  # should be sensor_count * number_of_records
+        total_rows = len(rows_sql)  
 
         result = {
             "timestamp_utc": datetime.utcnow().isoformat() + "Z",
@@ -190,7 +179,7 @@ def leeds_weather_stats(req: func.HttpRequest,
     and returns min / max / average per sensor as JSON.
     """
 
-    logging.info("LeedsWeatherStats (DB-based) function triggered.")
+    logging.info("LeedsWeatherStats function triggered.")
 
     # Convert SqlRow objects to Python dicts
     records = [json.loads(row.to_json()) for row in sensor_rows]
@@ -248,11 +237,11 @@ def leeds_weather_stats(req: func.HttpRequest,
         status_code=200,
     )
 
-# --- Task 3a: Timer-triggered data function (writes to SQL) ---
+# --- Task 3a: Timer-triggered data function ---
 @app.generic_output_binding(
     arg_name="rows",
     type="sql",
-    CommandText="dbo.SensorData",              # matches your SQL table
+    CommandText="dbo.SensorData",  
     ConnectionStringSetting="SqlConnectionString",
     data_type=DataType.STRING
 )
@@ -260,14 +249,14 @@ def leeds_weather_stats(req: func.HttpRequest,
 @app.timer_trigger(
     schedule="0 */5 * * * *",   # every 5 minutes
     arg_name="myTimer",
-    run_on_startup=True,        # run once immediately on host start (useful for testing)
+    run_on_startup=True,        # run once immediately on host start
     use_monitor=True
 )
 def task3_data_timer(myTimer: func.TimerRequest,
                      rows: func.Out[func.SqlRowList]) -> None:
     """
     Task 3a - Data function.
-    Timer-triggered Azure Function that writes ONE reading per sensor
+    Timer-triggered Azure Function that writes ONE reading per sensor 
     into the SensorData SQL table using an output binding.
     """
 
@@ -276,13 +265,12 @@ def task3_data_timer(myTimer: func.TimerRequest,
     sensor_count = 20  # 20 virtual sensors in Leeds
     sql_rows = generate_sql_rows_for_one_cycle(sensor_count)
 
-    # Write all rows to SQL in one operation
     rows.set(sql_rows)
 
     logging.info("Task3_DataTimer inserted %d rows into SensorData.", len(sql_rows))
 
 # --- Task 3b: SQL-triggered statistics function ---
-# This trigger fires whenever SensorData changes
+# Automatic trigger whenever SensorData changes
 @app.generic_trigger(
     arg_name="changes",
     type="sqlTrigger",
@@ -299,8 +287,8 @@ def task3_data_timer(myTimer: func.TimerRequest,
     ConnectionStringSetting="SqlConnectionString",
     data_type=DataType.STRING
 )
-@app.function_name(name="Task3_StatsSqlTriggerV2")   # NEW NAME
-def task3_stats_sql_trigger_v2(changes,              # NEW FUNCTION NAME
+@app.function_name(name="Task3_StatsSqlTriggerV2")   
+def task3_stats_sql_trigger_v2(changes,              
                                all_rows: func.SqlRowList) -> None:
     """
     Task 3(b) - Statistics function triggered by SQL.
@@ -317,7 +305,7 @@ def task3_stats_sql_trigger_v2(changes,              # NEW FUNCTION NAME
         logging.info("No records found in SensorData table.")
         return
 
-    # Helper to compute average
+    # Helper func to compute average
     def average(values):
         return sum(values) / len(values) if values else 0
 
@@ -358,7 +346,7 @@ def task3_stats_sql_trigger_v2(changes,              # NEW FUNCTION NAME
             },
         }
 
-    # Because this is a SQL trigger (not HTTP), we log the JSON
+    # Because this is a SQL trigger we log the JSON
     logging.info("Task3_StatsSqlTriggerV2 statistics:\n%s",
                  json.dumps(stats_per_sensor, indent=2))
 
