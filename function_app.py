@@ -2,6 +2,15 @@
 COMP3211 Coursework 2
 Name: Sinjini Sarkar (sc23ss2)
 Student ID: 201695493
+
+References:
+- Microsoft Azure Functions Python Developer Guide
+  https://learn.microsoft.com/azure/azure-functions/functions-reference-python
+- Azure SQL input/output bindings
+  https://learn.microsoft.com/azure/azure-functions/functions-bindings-azure-sql
+- Timer trigger documentation
+  https://learn.microsoft.com/azure/azure-functions/functions-bindings-time
+  
 """
 
 import azure.functions as func
