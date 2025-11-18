@@ -105,7 +105,7 @@ def leeds_weather_simulator(req: func.HttpRequest,
     """
     Task 1 - Simulated Data Function.
     Simulates data from 20 sensors in Leeds.
-    Uses ?number_of_records=<N> to control how many readings per sensor are generated.
+    Uses ?number_of_records=value(int) to control how many readings per sensor are generated.
     Writes all generated records into dbo.SensorData and returns timing + readings as JSON.
     """
 
