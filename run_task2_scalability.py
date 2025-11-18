@@ -41,7 +41,7 @@ for b in batches:
 plt.plot(x, y, marker="o")
 plt.xlabel("Total rows in SensorData")
 plt.ylabel("Response time (ms)")
-plt.title("Task 2 - Scalability")
+plt.title("Task 2 - Scalability of LeedsWeatherStats")
 plt.grid(True)
 plt.tight_layout()
 plt.savefig("task2_scalability.png")
